@@ -1,0 +1,43 @@
+WITH monthly_sales AS (
+    SELECT 
+        EXTRACT(MONTH FROM s.sale_date) AS month,  -- Extract the month from the sale date
+        EXTRACT(YEAR FROM s.sale_date) AS year,    -- Extract the year from the sale date
+        SUM(s.amount) AS total_sales,              -- Sum the sales amount to get total sales per month
+        r.region_name,                             -- Include the region name for regional sales data
+        COUNT(s.sale_id) AS total_transactions,    -- Count the number of transactions in each month
+        AVG(s.amount) AS average_sale_value,       -- Calculate the average sale amount per transaction
+        RANK() OVER (PARTITION BY EXTRACT(YEAR FROM s.sale_date) ORDER BY SUM(s.amount) DESC) AS sales_rank -- Rank regions by total sales
+    FROM 
+        sales s
+    JOIN 
+        regions r ON s.region_id = r.region_id   -- Join the sales table with the regions table
+    GROUP BY 
+        EXTRACT(MONTH FROM s.sale_date), 
+        EXTRACT(YEAR FROM s.sale_date), 
+        r.region_name                             -- Group by month, year, and region
+),
+cumulative_sales AS (
+    SELECT 
+        month,
+        year,
+        total_sales,
+        SUM(total_sales) OVER (PARTITION BY year ORDER BY month ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_sales, -- Calculate cumulative sales per year
+        total_transactions,
+        average_sale_value,
+        sales_rank
+    FROM 
+        monthly_sales
+)
+SELECT 
+    month, 
+    year, 
+    total_sales, 
+    cumulative_sales, 
+    total_transactions, 
+    average_sale_value, 
+    sales_rank, 
+    ROUND(((total_sales - LAG(total_sales, 1, 0) OVER (PARTITION BY year ORDER BY month)) / LAG(total_sales, 1, 0) OVER (PARTITION BY year ORDER BY month)) * 100, 2) AS growth_rate -- Calculate monthly growth rate
+FROM 
+    cumulative_sales
+ORDER BY 
+    year DESC, month DESC;
